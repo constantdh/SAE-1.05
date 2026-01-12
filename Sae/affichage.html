@@ -140,6 +140,8 @@ a:hover {
     <h2>Sélection du fichier (CSV ou Excel)</h2>
     <input type="file" id="fileInput" accept=".csv,.xlsx">
 
+    <button id="download-md">Télécharger en Markdown</button>
+
     <h2>Activité par IP source</h2>
     <div class="chart-row">
         <div class="chart-container"><canvas id="barChart"></canvas></div>
@@ -176,7 +178,27 @@ document.getElementById("fileInput").addEventListener("change", e => {
         reader.onload = evt => analyserExcel(evt.target.result);
         reader.readAsArrayBuffer(file);
     }
+    document.getElementById("download-md").addEventListener("click", function () {
+    // Remplace "markdown" par la variable qui contient ton texte Markdown
+    const markdownContent = markdown;  
+
+    const blob = new Blob([markdownContent], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "export.md";  // Nom du fichier téléchargé
+    document.body.appendChild(a);
+    a.click();
+
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+
 });
+
+
+
 
 function analyserExcel(data) {
     const workbook = XLSX.read(data, { type: "array" });
