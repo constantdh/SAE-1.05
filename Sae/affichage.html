@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Rapport d’analyse TCPdump</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+
+<style>
+/* --- Mise en page générale --- */
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 40px;
+    background: linear-gradient(135deg, #0f172a, #1e293b);
+    color: #e5e7eb;
+}
+
+h1, h2 {
+    color: #fbbf24;
+    margin-top: 0;
+}
+
+h1 {
+    font-size: 2.2rem;
+    text-shadow: 0 2px 6px rgba(0,0,0,0.6);
+}
+
+h2 {
+    margin-top: 30px;
+    font-size: 1.4rem;
+}
+
+/* --- Carte centrale --- */
+main {
+    max-width: 1100px;
+    margin: 0 auto;
+    background: rgba(15,23,42,0.9);
+    border-radius: 16px;
+    padding: 30px 32px 40px;
+    box-shadow: 0 18px 40px rgba(0,0,0,0.45);
+    border: 1px solid rgba(148,163,184,0.3);
+}
+
+/* --- Bouton de fichier --- */
+#fileInput {
+    padding: 10px 14px;
+    border-radius: 999px;
+    border: 1px solid #4b5563;
+    background: #0ea5e9;
+    color: #0f172a;
+    font-weight: bold;
+    cursor: pointer;
+    transition: transform 0.1s ease, box-shadow 0.15s ease, background 0.15s;
+}
+#fileInput:hover {
+    background: #22c55e;
+    box-shadow: 0 0 0 3px rgba(34,197,94,0.4);
+    transform: translateY(-1px);
+}
+
+/* --- Graphiques --- */
+.chart-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 30px;
+    margin-top: 10px;
+}
+.chart-container {
+    flex: 1 1 320px;
+    min-width: 280px;
+    background: #020617;
+    border-radius: 14px;
+    padding: 16px 18px 10px;
+    box-shadow: 0 12px 25px rgba(0,0,0,0.4);
+    border: 1px solid rgba(148,163,184,0.3);
+}
+
+/* --- Tableau --- */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0 8px;
+    border-radius: 12px;
+    overflow: hidden;
+    background: #020617;
+    box-shadow: 0 12px 24px rgba(0,0,0,0.35);
+}
+th, td {
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(148,163,184,0.25);
+    text-align: left;
+    font-size: 0.9rem;
+}
+th {
+    background: #111827;
+    color: #e5e7eb;
+    font-weight: 600;
+}
+tbody tr:last-child td {
+    border-bottom: none;
+}
+
+/* --- Couleurs de niveaux --- */
+.high   { background: linear-gradient(90deg,#7f1d1d,#b91c1c); color:#fee2e2; }
+.medium { background: linear-gradient(90deg,#78350f,#d97706); color:#fffbeb; }
+.low    { background: linear-gradient(90deg,#064e3b,#047857); color:#dcfce7; }
+
+/* --- Interprétation --- */
+#interpretation {
+    background: #020617;
+    border-radius: 12px;
+    padding: 14px 18px;
+    box-shadow: 0 10px 22px rgba(0,0,0,0.35);
+    border: 1px solid rgba(148,163,184,0.35);
+    font-size: 0.95rem;
+}
+#interpretation ul {
+    margin: 8px 0 0;
+    padding-left: 20px;
+}
+#interpretation li {
+    margin-bottom: 4px;
+}
+
+/* --- Liens Chart.js/xlsx (au cas où) --- */
+a {
+    color: #38bdf8;
+}
+a:hover {
+    color: #a5b4fc;
+}
+</style>
+</head>
+
+<body>
+<main>
+    <h1>Rapport d’Analyse du Trafic Réseau</h1>
+
+    <h2>Sélection du fichier (CSV ou Excel)</h2>
+    <input type="file" id="fileInput" accept=".csv,.xlsx">
+
+    <h2>Activité par IP source</h2>
+    <div class="chart-row">
+        <div class="chart-container"><canvas id="barChart"></canvas></div>
+        <div class="chart-container"><canvas id="pieChart"></canvas></div>
+    </div>
+
+    <h2>Classement des IP sources</h2>
+    <table>
+        <thead>
+        <tr>
+            <th>IP Source</th>
+            <th>Paquets</th>
+            <th>Niveau</th>
+        </tr>
+        </thead>
+        <tbody id="ipTable"></tbody>
+    </table>
+
+    <h2>Interprétation</h2>
+    <p id="interpretation">Sélectionnez un fichier pour lancer l’analyse.</p>
+</main>
+
+<script>
+document.getElementById("fileInput").addEventListener("change", e => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (file.name.endsWith(".csv")) {
+        const reader = new FileReader();
+        reader.onload = evt => analyserCSV(evt.target.result);
+        reader.readAsText(file);
+    } else if (file.name.endsWith(".xlsx")) {
+        const reader = new FileReader();
+        reader.onload = evt => analyserExcel(evt.target.result);
+        reader.readAsArrayBuffer(file);
+    }
+});
+
+function analyserExcel(data) {
+    const workbook = XLSX.read(data, { type: "array" });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const csv = XLSX.utils.sheet_to_csv(sheet);
+    analyserCSV(csv);
+}
+
+let currentBar, currentPie;
+
+function analyserCSV(text) {
+    const lines = text.trim().split("\n");
+    const headers = lines[0].split(",");
+    const srcIndex = headers.findIndex(h =>
+        h.toLowerCase().includes("src") || h.toLowerCase().includes("source")
+    );
+    if (srcIndex === -1) {
+        alert("Colonne IP source introuvable");
+        return;
+    }
+
+    const ipCount = {};
+    for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i].split(",");
+        const ip = cols[srcIndex].split(":")[0];
+        ipCount[ip] = (ipCount[ip] || 0) + 1;
+    }
+
+    const sorted = Object.entries(ipCount).sort((a,b) => b[1] - a[1]);
+
+    // ===== TABLE =====
+    const table = document.getElementById("ipTable");
+    table.innerHTML = "";
+    let interpretation = "<ul>";
+    sorted.forEach(([ip, count]) => {
+        let level = "Faible";
+        let cls = "low";
+        if (count > 50) {
+            level = "Élevé";
+            cls = "high";
+            interpretation += `<li><b>${ip}</b> : activité très persistante (${count} paquets)</li>`;
+        } else if (count > 20) {
+            level = "Moyen";
+            cls = "medium";
+        }
+        table.innerHTML += `
+        <tr class="${cls}">
+            <td>${ip}</td>
+            <td>${count}</td>
+            <td>${level}</td>
+        </tr>`;
+    });
+    interpretation += "</ul>";
+    document.getElementById("interpretation").innerHTML = interpretation;
+
+    // ===== GRAPHIQUES =====
+    const labels = sorted.map(e => e[0]);
+    const values = sorted.map(e => e[1]);
+    const palette = ["#22c55e","#38bdf8","#f97316","#a855f7","#e11d48"];
+    const colors = labels.map((_, i) => palette[i % palette.length]);
+
+    const barCtx = document.getElementById("barChart");
+    const pieCtx = document.getElementById("pieChart");
+
+    if (currentBar) currentBar.destroy();
+    if (currentPie) currentPie.destroy();
+
+    currentBar = new Chart(barCtx, {
+        type: "bar",
+        data: { labels, datasets: [{ data: values, backgroundColor: colors }] },
+        options: {
+            plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: true, ticks: { color: "#e5e7eb" } },
+                      x: { ticks: { color: "#e5e7eb" } } }
+        }
+    });
+
+    currentPie = new Chart(pieCtx, {
+        type: "pie",
+        data: { labels, datasets: [{ data: values, backgroundColor: colors }] },
+        options: {
+            plugins: {
+                legend: { labels: { color: "#e5e7eb" } }
+            }
+        }
+    });
+}
+</script>
+</body>
+</html>
