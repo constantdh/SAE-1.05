@@ -5,11 +5,13 @@ from openpyxl.styles import Font, PatternFill, Alignment
 from collections import defaultdict
 
 # Chemins des fichiers
-input_csv = "trafic.csv"  # Le CSV créé précédemment
-output_excel = "rapport_trafic.xlsx"
+input_csv = "C:/Users/Admin/SAE-1.05/Sae/headers.csv"  # Le CSV créé précédemment
+output_excel = "rapport_headers.xlsx"
 
 # Lire le CSV
-df = pd.read_csv(input_csv)
+df = pd.read_csv(input_csv)          # lit la colonne 'header'
+df = df.rename(columns={'header': 'ip_source'})
+df_sorted = df.sort_values(by=['ip_source'], ascending=True)
 
 # === OPTION 1 : Trier par IP source (simple) ===
 df_sorted = df.sort_values(by=['ip_source'], ascending=True)
