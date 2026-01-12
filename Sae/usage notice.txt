@@ -1,0 +1,6 @@
+First, you need to take the first python file named "extraction.py" and modifie the repository to make sure the .txt file with IP headers is correctly linked,
+
+
+
+extensions nedeed : pip install pandas
+                    pip install openpyxl
